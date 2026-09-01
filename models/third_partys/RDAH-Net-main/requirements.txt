@@ -1,0 +1,10 @@
+# Python 3.10/3.11; shared inference requirements are also in models/requirements.txt.
+torch==2.3.1
+torchvision==0.18.1
+numpy>=1.24,<2.0
+opencv-python-headless>=4.8,<5
+Pillow>=9.4
+tqdm>=4.66
+transformers>=4.45,<5
+safetensors>=0.4
+einops>=0.8
