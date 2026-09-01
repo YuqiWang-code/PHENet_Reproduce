@@ -176,6 +176,31 @@ def benchmark_model(loader, network, device, logger, warmup=20, max_iters=50):
 
 
 class Trainer:
+    def make_pseudo_label(self, image_a, image_b):
+        if self.args.pseudo_mode == "frozen":
+            return generate_pseudo_label(
+                image_a,
+                image_b,
+                self.pseudo_extractor,
+            )
+
+        if self.args.pseudo_mode == "zero":
+            return torch.zeros(
+                (
+                    image_a.shape[0],
+                    1,
+                    image_a.shape[2],
+                    image_a.shape[3],
+                ),
+                device=image_a.device,
+                dtype=image_a.dtype,
+            )
+
+        raise ValueError(
+            f"Unsupported pseudo mode: "
+            f"{self.args.pseudo_mode}"
+        )
+
     def __init__(self, args, logger):
         self.args = args
         self.logger = logger
@@ -243,7 +268,10 @@ class Trainer:
             change, ce, dice = self.change_loss(logits, target)
             tv = self.physical_loss.tv_loss(trans_a) + self.physical_loss.tv_loss(trans_b)
             dark = self.physical_loss.dark_channel_loss(clear_a) + self.physical_loss.dark_channel_loss(clear_b)
-            pseudo = generate_pseudo_label(image_a, image_b, self.pseudo_extractor)
+            pseudo = self.make_pseudo_label(
+                image_a,
+                image_b,
+            )
 
             set_requires_grad(self.discriminator, False)
             fake_logits = self.discriminator(torch.cat((fog_a, fog_b, pseudo), dim=1))
@@ -350,6 +378,16 @@ def parse_args():
     parser.add_argument("--freeze-bn", action="store_true")
     parser.add_argument("--no-cuda", action="store_true")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--pseudo-mode",
+        default="frozen",
+        choices=("frozen", "zero"),
+        help=(
+            "PGARM discriminator conditioning: "
+            "'frozen' uses the current frozen-random ShallowCNN pseudo-label; "
+            "'zero' uses an all-zero pseudo channel for controlled ablation."
+        ),
+    )
     parser.add_argument("--resume")
     parser.add_argument("--benchmark-warmup", type=int, default=20)
     parser.add_argument("--benchmark-iters", type=int, default=50)
@@ -388,6 +426,9 @@ def main():
             logger,
             warmup=args.benchmark_warmup,
             max_iters=args.benchmark_iters,
+        )
+        logger.write(
+            f"Pseudo Mode: {args.pseudo_mode}"
         )
         logger.write(
             "Epoch\tLR\tTotalLoss\tChangeLoss\tCE\tDice\tTV\tDark\tAdvG\tDisc\tValLoss"
