@@ -15,7 +15,7 @@ from tqdm import tqdm
 from dataloaders import make_data_loaders
 from modeling.PHENet import PHENet
 from modeling.sync_batchnorm.replicate import patch_replication_callback
-from utils.loss import DiceCrossEntropyLoss
+from utils.loss import build_change_loss
 from utils.metrics import Evaluator
 
 
@@ -236,7 +236,14 @@ class Trainer:
             if args.sync_bn:
                 patch_replication_callback(model)
         self.model = model
-        self.change_loss = DiceCrossEntropyLoss()
+
+        (
+            self.change_loss,
+            self.classification_loss_name,
+        ) = build_change_loss(
+            args.change_loss_mode
+        )
+
         self.physical_loss = PhysicalLosses()
         self.best_f1 = -1.0
         self.start_epoch = 0
@@ -258,14 +265,14 @@ class Trainer:
     def train_epoch(self, epoch):
         self.model.train()
         self.discriminator.train()
-        totals = {key: 0.0 for key in ("total", "change", "ce", "dice", "tv", "dark", "adv_g", "disc")}
+        totals = {key: 0.0 for key in ("total", "change", "cls", "dice", "tv", "dark", "adv_g", "disc")}
         progress = tqdm(self.train_loader, desc=f"Train {epoch + 1}/{self.args.epochs}", leave=False)
         for batch in progress:
             image_a, image_b, target, height_a, height_b, _ = model_inputs(batch, self.device)
             self.optimizer.zero_grad(set_to_none=True)
             outputs = self.model(image_a, image_b, height_a, height_b)
             logits, fog_a, clear_a, trans_a, _, fog_b, clear_b, trans_b, _ = outputs
-            change, ce, dice = self.change_loss(logits, target)
+            change, classification, dice = self.change_loss(logits, target)
             tv = self.physical_loss.tv_loss(trans_a) + self.physical_loss.tv_loss(trans_b)
             dark = self.physical_loss.dark_channel_loss(clear_a) + self.physical_loss.dark_channel_loss(clear_b)
             pseudo = self.make_pseudo_label(
@@ -294,7 +301,7 @@ class Trainer:
             values = {
                 "total": total,
                 "change": change,
-                "ce": ce,
+                "cls": classification,
                 "dice": dice,
                 "tv": tv,
                 "dark": dark,
@@ -388,6 +395,19 @@ def parse_args():
             "'zero' uses an all-zero pseudo channel for controlled ablation."
         ),
     )
+    parser.add_argument(
+        "--change-loss-mode",
+        default="current",
+        choices=(
+            "current",
+            "bce_fg_dice",
+        ),
+        help=(
+            "Change-detection loss ablation: "
+            "'current' uses 2-class CE + foreground/background mean Dice; "
+            "'bce_fg_dice' uses binary BCEWithLogits + foreground Dice."
+        ),
+    )
     parser.add_argument("--resume")
     parser.add_argument("--benchmark-warmup", type=int, default=20)
     parser.add_argument("--benchmark-iters", type=int, default=50)
@@ -431,7 +451,12 @@ def main():
             f"Pseudo Mode: {args.pseudo_mode}"
         )
         logger.write(
-            "Epoch\tLR\tTotalLoss\tChangeLoss\tCE\tDice\tTV\tDark\tAdvG\tDisc\tValLoss"
+            f"Change Loss Mode: {args.change_loss_mode}"
+        )
+        logger.write(
+            "Epoch\tLR\tTotalLoss\tChangeLoss\t"
+            f"{trainer.classification_loss_name}"
+            "\tDice\tTV\tDark\tAdvG\tDisc\tValLoss"
             "\tRecall\tPrecision\tOA\tF1\tIoU\tKappa"
         )
         for epoch in range(trainer.start_epoch, args.epochs):
@@ -448,7 +473,7 @@ def main():
 
             logger.write(
                 f"{epoch + 1}\t{lr:.8g}\t{losses['total']:.6f}\t{losses['change']:.6f}"
-                f"\t{losses['ce']:.6f}\t{losses['dice']:.6f}\t{losses['tv']:.6f}"
+                f"\t{losses['cls']:.6f}\t{losses['dice']:.6f}"
                 f"\t{losses['dark']:.6f}\t{losses['adv_g']:.6f}\t{losses['disc']:.6f}"
                 f"\t{val_loss:.6f}\t{metrics['Recall'] * 100:.4f}\t{metrics['Precision'] * 100:.4f}"
                 f"\t{metrics['OA'] * 100:.4f}\t{metrics['F1'] * 100:.4f}"
