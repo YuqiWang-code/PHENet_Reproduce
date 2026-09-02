@@ -29,7 +29,7 @@ cd "${PROJECT_ROOT}"
   --save-dir "${SAVE_ROOT}" \
   --val-split test \
   --label-dir GT \
-  --epochs 300 \
+  --epochs 100 \
   --batch-size 8 \
   --test-batch-size 8 \
   --lr 1e-4 \
