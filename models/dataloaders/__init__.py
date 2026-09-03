@@ -26,3 +26,23 @@ def make_data_loaders(args):
         **kwargs,
     )
     return train_loader, val_loader, 2
+
+
+def make_test_loader(args):
+    kwargs = {
+        "num_workers": args.workers,
+        "pin_memory": bool(args.cuda),
+        "persistent_workers": args.workers > 0,
+    }
+
+    test_set = CDDataSet(args, split=args.split)
+
+    test_loader = DataLoader(
+        test_set,
+        batch_size=args.batch_size,
+        shuffle=False,
+        drop_last=False,
+        **kwargs,
+    )
+
+    return test_loader, 2
