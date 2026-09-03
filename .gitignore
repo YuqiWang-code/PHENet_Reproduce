@@ -1,12 +1,19 @@
 # ============================================================
 # PHENet Git repository
-# Only track models/ and train_scripts/
+# Track source/scripts, AGENTS.md, and the two explicitly approved docs
 # ============================================================
 
 /*
 !/.gitignore
+!/AGENTS.md
 !/models/
 !/train_scripts/
+!/docs/
+/docs/*
+!/docs/Upload_gpt/
+/docs/Upload_gpt/*
+!/docs/Upload_gpt/server_and_dataset_info.md
+!/docs/Upload_gpt/PHENet_Toward_Robust_Fog-Resilient_Change_Detection_in_Remote_Sensing_Imagery_With_a_Physics-Guided_Height-Enhanced_Network.pdf
 
 
 # ============================================================
