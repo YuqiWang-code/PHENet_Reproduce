@@ -85,21 +85,59 @@ class CDDataSet(Dataset):
             raise FileNotFoundError("Missing dataset directories: " + ", ".join(missing))
 
     def _collect_ids(self):
-        ids = sorted(
-            path.name
-            for path in self.a_dir.iterdir()
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
-        )
-        if not ids:
+        directories = {
+            "A": self.a_dir,
+            "B": self.b_dir,
+            "label": self.label_dir,
+            "A_heightmap": self.a_height_dir,
+            "B_heightmap": self.b_height_dir,
+        }
+
+        name_sets = {
+            name: {
+                path.name
+                for path in directory.iterdir()
+                if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+            }
+            for name, directory in directories.items()
+        }
+
+        if not name_sets["A"]:
             raise RuntimeError(f"No supported images found in {self.a_dir}")
-        roots = (self.b_dir, self.label_dir, self.a_height_dir, self.b_height_dir)
-        missing = [(name, str(root)) for name in ids for root in roots if not (root / name).is_file()]
-        if missing:
-            preview = ", ".join(f"{name} @ {root}" for name, root in missing[:10])
-            raise FileNotFoundError(
-                f"{len(missing)} paired files are missing (first entries: {preview})"
+
+        reference = name_sets["A"]
+
+        mismatch_messages = []
+
+        for name in ("B", "label", "A_heightmap", "B_heightmap"):
+            current = name_sets[name]
+
+            missing = sorted(reference - current)
+            extra = sorted(current - reference)
+
+            if missing or extra:
+                mismatch_messages.append(
+                    f"{name}: "
+                    f"count={len(current)}, "
+                    f"missing={len(missing)} {missing[:10]}, "
+                    f"extra={len(extra)} {extra[:10]}"
+                )
+
+        if mismatch_messages:
+            counts = ", ".join(
+                f"{name}={len(names)}"
+                for name, names in name_sets.items()
             )
-        return ids
+
+            raise RuntimeError(
+                "Dataset pairing check failed. "
+                "A/B/label/A_heightmap/B_heightmap must contain exactly "
+                "the same supported-image filenames.\n"
+                f"Counts: {counts}\n"
+                + "\n".join(mismatch_messages)
+            )
+
+        return sorted(reference)
 
     @staticmethod
     def _geometry(images, label, heights, image_size, training):
